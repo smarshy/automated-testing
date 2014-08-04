@@ -1,75 +1,21 @@
 package tests;
 //navigate to the portal site
 
-import java.util.concurrent.TimeUnit;
-import org.junit.*;
 import static org.junit.Assert.*;
+import org.junit.Test;
+import org.openqa.selenium.By;
 
-import org.openqa.selenium.*;
-import org.openqa.selenium.firefox.FirefoxDriver;
+public class test1 extends helper.CommonCode {
 
-public class test1 {
-  private WebDriver driver;
-  private String baseUrl;
-  private boolean acceptNextAlert = true;
-  private StringBuffer verificationErrors = new StringBuffer();
 
-  @Before
-  public void setUp() throws Exception {
-    driver = new FirefoxDriver();
-    baseUrl = "http://systersportal-demo.herokuapp.com";
-    driver.manage().timeouts().implicitlyWait(30, TimeUnit.SECONDS);
-  }
+	@Test
+	public void testSysterslink() {
+		driver.get(baseUrl + "/");
+	    driver.findElement(By.linkText("Systers")).click();
+	    String str = driver.getCurrentUrl();
+	    boolean content = driver.getPageSource().contains("We envision a future");
+	    assertEquals(baseUrl+"/",str);
+	    assertTrue(content);
+	}
 
-  @Test
-  public void testlinktext() throws Exception {
-    driver.get(baseUrl + "/");
-    driver.findElement(By.linkText("Systers")).click();
-    String str = driver.getCurrentUrl();
-    boolean content = driver.getPageSource().contains("We envision a future");
-    assertEquals(baseUrl,str);
-    assertTrue(content);
-  }
-
-  @After
-  public void tearDown() throws Exception {
-    driver.quit();
-    String verificationErrorString = verificationErrors.toString();
-    if (!"".equals(verificationErrorString)) {
-      fail(verificationErrorString);
-    }
-  }
-
-  private boolean isElementPresent(By by) {
-    try {
-      driver.findElement(by);
-      return true;
-    } catch (NoSuchElementException e) {
-      return false;
-    }
-  }
-
-  private boolean isAlertPresent() {
-    try {
-      driver.switchTo().alert();
-      return true;
-    } catch (NoAlertPresentException e) {
-      return false;
-    }
-  }
-
-  private String closeAlertAndGetItsText() {
-    try {
-      Alert alert = driver.switchTo().alert();
-      String alertText = alert.getText();
-      if (acceptNextAlert) {
-        alert.accept();
-      } else {
-        alert.dismiss();
-      }
-      return alertText;
-    } finally {
-      acceptNextAlert = true;
-    }
-  }
 }
