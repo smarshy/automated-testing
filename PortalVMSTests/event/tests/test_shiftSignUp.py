@@ -1,217 +1,239 @@
-from django.test import TestCase
 from django.contrib.staticfiles.testing import LiveServerTestCase
 
-from django.contrib.auth.models import User
-from volunteer.models import Volunteer
-from event.models import Event
 from job.models import Job
-from shift.models import Shift, VolunteerShift
+from shift.models import VolunteerShift
+
+from pom.pages.eventSignUpPage import EventSignUpPage
+from pom.pages.authenticationPage import AuthenticationPage
 
 from selenium import webdriver
 from selenium.common.exceptions import NoSuchElementException
 
-from organization.models import Organization #hack to pass travis,Bug in Code
-
+from shift.utils import (
+    create_volunteer,
+    register_event_utility,
+    register_job_utility,
+    register_shift_utility,
+    create_volunteer_with_details,
+    create_shift_with_details,
+    register_volunteer_for_shift_utility
+    )
 
 class ShiftSignUp(LiveServerTestCase):
     '''
     '''
+    @classmethod
+    def setUpClass(cls):
+        cls.driver = webdriver.Firefox()
+        cls.driver.implicitly_wait(5)
+        cls.driver.maximize_window()
+        cls.sign_up_page = EventSignUpPage(cls.driver)
+        cls.authentication_page = AuthenticationPage(cls.driver)
+        super(ShiftSignUp, cls).setUpClass()
+
     def setUp(self):
-        volunteer_user = User.objects.create_user(
-                username = 'volunteer',
-                password = 'volunteer',
-                email = 'volunteer@volunteer.com')
-
-        Volunteer.objects.create(
-                user = volunteer_user,
-                address = 'address',
-                city = 'city',
-                state = 'state',
-                country = 'country',
-                phone_number = '9999999999',
-                unlisted_organization = 'organization')
-
-        # create an org prior to registration. Bug in Code
-        # added to pass CI
-        Organization.objects.create(
-                name = 'DummyOrg')
-
-        self.homepage = '/'
-        self.authentication_page = '/authentication/login/'
-        self.driver = webdriver.Firefox()
-        self.driver.implicitly_wait(5)
-        self.driver.maximize_window()
-        super(ShiftSignUp, self).setUp()
+        self.volunteer = create_volunteer()
+        self.login_volunteer()
 
     def tearDown(self):
-        self.driver.quit()
-        super(ShiftSignUp, self).tearDown()
+        pass
 
-    def login(self):
-        self.driver.get(self.live_server_url + self.authentication_page)
-        self.driver.find_element_by_id('id_login').send_keys('volunteer')
-        self.driver.find_element_by_id('id_password').send_keys('volunteer')
-        self.driver.find_element_by_xpath('//form[1]').submit()
+    @classmethod
+    def tearDownClass(cls):
+        cls.driver.quit()
+        super(ShiftSignUp, cls).tearDownClass()
 
-        self.assertEqual(self.driver.current_url,
-                self.live_server_url + self.homepage)
-
-    def register_event_utility(self):
-        Event.objects.create(
-                name = 'event',
-                start_date = '2016-06-15',
-                end_date = '2016-06-16')
-
-    def register_job_utility(self):
-        Job.objects.create(
-                name = 'job',
-                start_date = '2016-06-15',
-                end_date = '2016-06-15',
-                event = Event.objects.get(name = 'event'))
-
-    def register_shift_utility(self):
-        Shift.objects.create(
-                date = '2016-06-15',
-                start_time = '09:00',
-                end_time = '15:00',
-                max_volunteers ='6',
-                job = Job.objects.get(name = 'job'))
+    def login_volunteer(self):
+        self.authentication_page.server_url = self.live_server_url
+        self.authentication_page.login({ 'username' : 'volunteer', 'password' : 'volunteer'})
 
     def test_events_page_with_no_events(self):
-        self.login()
-
-        # open Shift Sign Up
-        self.driver.find_element_by_link_text('Shift Sign Up').click()
-
-        self.assertEqual(self.driver.find_element_by_class_name('alert-info').text,
-               'There are no events.')
-
+        sign_up_page = self.sign_up_page
+        sign_up_page.navigate_to_sign_up()
+        self.assertEqual(sign_up_page.get_info_box().text,sign_up_page.no_event_message)
 
     def test_signup_shifts_with_registered_shifts(self):
-        # login
-        self.login()
 
-        self.register_event_utility()
-        self.register_job_utility()
-        self.register_shift_utility()
+        created_event = register_event_utility()
+        created_job = register_job_utility()
+        created_shift = register_shift_utility()
+
+        sign_up_page = self.sign_up_page
 
         # open Shift Sign Up
-        self.driver.find_element_by_link_text('Shift Sign Up').click()
+        sign_up_page.navigate_to_sign_up()
 
         # on event page
-        self.assertEqual(self.driver.find_element_by_xpath(
-            '//table//tbody//tr[1]//td[4]').text, 'View Jobs')
-        self.driver.find_element_by_xpath(
-                '//table//tbody//tr[1]//td[4]//a').click()
+        sign_up_page.click_to_view_jobs()
 
         # on jobs page
-        self.assertEqual(self.driver.find_element_by_xpath(
-            '//table//tbody//tr[1]//td[4]').text, 'View Shifts')
-        self.driver.find_element_by_xpath(
-                '//table//tbody//tr[1]//td[4]//a').click()
+        sign_up_page.click_to_view_shifts()
 
         # on shifts page
-        self.assertEqual(self.driver.find_element_by_xpath(
-            '//table//tbody//tr[1]//td[4]').text, 'Sign Up')
-        self.driver.find_element_by_xpath(
-                '//table//tbody//tr[1]//td[4]//a').click()
+        sign_up_page.click_to_sign_up()
 
         # confirm shift assignment
-        self.driver.find_element_by_xpath('//form[1]').submit()
+        sign_up_page.submit_form()
         with self.assertRaises(NoSuchElementException):
-            self.driver.find_element_by_class_name('alert-danger')
+            sign_up_page.get_danger_box()
 
         # check shift signed up
-        self.assertEqual(self.driver.find_element_by_xpath(
-            'html/body/div[2]/h3').text,
-            'Upcoming Shifts')
-        self.assertEqual(self.driver.find_element_by_xpath(
-            '//table//tbody//tr[1]//td[1]').text,
-            'job')
-        self.assertEqual(self.driver.find_element_by_xpath(
-            '//table//tbody//tr[1]//td[2]').text,
-            'June 15, 2016')
-        self.assertEqual(self.driver.find_element_by_xpath(
-            '//table//tbody//tr[1]//td[3]').text,
-            '9 a.m.')
-        self.assertEqual(self.driver.find_element_by_xpath(
-            '//table//tbody//tr[1]//td[4]').text,
-            '3 p.m.')
+        self.assertEqual(sign_up_page.get_signed_up_shift_text(),'Upcoming Shifts')
+        self.assertEqual(sign_up_page.get_shift_job(),'job')
+        self.assertEqual(sign_up_page.get_shift_date(),'June 15, 2017')
+        self.assertEqual(sign_up_page.get_shift_start_time(),'9 a.m.')
+        self.assertEqual(sign_up_page.get_shift_end_time(),'3 p.m.')
 
-    def test_signup_for_same_shift_again(self):
-        # login
-        self.login()
+        # database check to ensure volunteer has signed up for the shift
+        self.assertEqual(len(VolunteerShift.objects.all()), 1)
+        self.assertNotEqual(len(VolunteerShift.objects.filter(
+            volunteer_id=self.volunteer.id, shift_id = created_shift.id)), 0)
 
-        self.register_event_utility()
-        self.register_job_utility()
-        self.register_shift_utility()
+    """def test_signup_for_same_shift_again(self):
 
+        register_event_utility()
+        register_job_utility()
+        register_shift_utility()
+
+        sign_up_page = self.sign_up_page
         # open Shift Sign Up
-        self.driver.find_element_by_link_text('Shift Sign Up').click()
+        sign_up_page.navigate_to_sign_up()
 
         # events shown in table
         with self.assertRaises(NoSuchElementException):
-            self.driver.find_element_by_class_name('alert-info')
-        self.assertEqual(self.driver.find_element_by_xpath(
-            '//table//tbody//tr[1]//td[4]').text,
-            'View Jobs')
-        self.driver.find_element_by_xpath(
-                '//table//tbody//tr[1]//td[4]//a').click()
+            sign_up_page.get_info_box()
+        sign_up_page.click_to_view_jobs()
 
         # on jobs page
-        self.assertEqual(self.driver.find_element_by_xpath(
-            '//table//tbody//tr[1]//td[4]').text,
-            'View Shifts')
-        self.driver.find_element_by_xpath(
-                '//table//tbody//tr[1]//td[4]//a').click()
+        sign_up_page.click_to_view_shifts()
 
         # on shifts page, Sign up this shift !
-        self.assertEqual(self.driver.find_element_by_xpath(
-            '//table//tbody//tr[1]//td[4]').text,
-            'Sign Up')
-        self.driver.find_element_by_xpath(
-                '//table//tbody//tr[1]//td[4]//a').click()
+        sign_up_page.click_to_sign_up()
 
         # confirm on shift sign up
-        self.driver.find_element_by_xpath('//form[1]').submit()
+        sign_up_page.submit_form()
         with self.assertRaises(NoSuchElementException):
-            self.driver.find_element_by_class_name('alert-danger')
+            sign_up_page.get_danger_box()
 
         # sign up same shift again
         # open Shift Sign Up
-        self.driver.find_element_by_link_text('Shift Sign Up').click()
+        sign_up_page.navigate_to_sign_up()
 
         # events page
-        self.assertEqual(self.driver.find_element_by_class_name('alert-info').text,
-               'There are no events.')
-        with self.assertRaises(NoSuchElementException):
-            self.driver.find_element_by_tag_name('table')
-            self.assertEqual(self.driver.find_element_by_xpath(
-            '//table//tbody//tr[1]//td[4]').text, 'View Jobs')
+        self.assertEqual(sign_up_page.get_info_box().text,sign_up_page.no_event_message)
 
+        with self.assertRaises(NoSuchElementException):
+            sign_up_page.find_table_tag()
 
     def test_empty_events(self):
-        self.login()
-
-        self.register_event_utility()
-
+        
+        register_event_utility()
+        sign_up_page = self.sign_up_page
         # open Shift Sign Up
-        self.driver.find_element_by_link_text('Shift Sign Up').click()
+        sign_up_page.navigate_to_sign_up()
 
         # on event page
-        self.assertEqual(self.driver.find_element_by_class_name('alert-info').text,
-               'There are no events.')
+        self.assertEqual(sign_up_page.get_info_box().text,sign_up_page.no_event_message)
+
         with self.assertRaises(NoSuchElementException):
-            self.driver.find_element_by_tag_name('table')
-            self.assertEqual(self.driver.find_element_by_xpath(
-            '//table//tbody//tr[1]//td[4]').text, 'View Jobs')
+            sign_up_page.find_table_tag()
+            sign_up_page.click_to_view_jobs()
 
-        self.register_job_utility()
+        register_job_utility()
 
-        self.assertEqual(self.driver.find_element_by_class_name('alert-info').text,
-               'There are no events.')
+        self.assertEqual(sign_up_page.get_info_box().text,sign_up_page.no_event_message)
+
         with self.assertRaises(NoSuchElementException):
-            self.driver.find_element_by_tag_name('table')
-            self.assertEqual(self.driver.find_element_by_xpath(
-            '//table//tbody//tr[1]//td[4]').text, 'View Jobs')
+            sign_up_page.find_table_tag()
 
+    def test_shift_sign_up_with_outdated_shifts(self):
+
+        register_event_utility()
+        register_job_utility()
+        sign_up_page = self.sign_up_page
+
+        # create outdated shift
+        shift_1 = ["2016-05-11","9:00","15:00",6,Job.objects.get(name = 'job')]
+        s1 = create_shift_with_details(shift_1)
+
+        # open Shift Sign Up
+        sign_up_page.navigate_to_sign_up()
+
+        # on event page
+        sign_up_page.click_to_view_jobs()
+
+        # on jobs page
+        sign_up_page.click_to_view_shifts()
+        self.assertEqual(sign_up_page.get_info_box().text,'There are currently no shifts for the job job.')
+
+    def test_shift_sign_up_with_no_slots(self):
+
+        register_event_utility()
+        register_job_utility()
+
+        sign_up_page = self.sign_up_page
+
+        # create shift with no slot
+        shift_2 = ["2016-05-11","9:00","15:00",1,Job.objects.get(name = 'job')]
+        s2 = create_shift_with_details(shift_2)
+
+        # Create another volunteer
+        volunteer_2 = ['volunteer-2',"Sam","Turtle","Mario Land","Nintendo Land","Nintendo State","Nintendo Nation","2374983247","volunteer2@volunteer.com"]
+        v2 = create_volunteer_with_details(volunteer_2)
+
+        # Assign shift to the volunteer
+        vol_shift = register_volunteer_for_shift_utility(s2, v2)
+
+        # open Shift Sign Up
+        sign_up_page.navigate_to_sign_up()
+
+        # on event page
+        self.assertEqual(sign_up_page.get_info_box().text,sign_up_page.no_event_message)
+
+    def test_search_event(self):
+
+        register_event_utility()
+        register_job_utility()
+        register_shift_utility()
+
+        sign_up_page = self.sign_up_page
+
+        # open Shift Sign Up
+        sign_up_page.navigate_to_sign_up()
+
+        # enter date range in which an event starts
+        date = ['05/08/2016', '08/31/2017']
+        sign_up_page.fill_search_form(date)
+        # verify that the event shows up
+        self.assertEqual(sign_up_page.get_event_name(), 'event')
+
+        # enter date range in which no event starts
+        date = ['10/08/2016', '08/31/2017']
+        sign_up_page.fill_search_form(date)
+        # verify that no event shows up on event page
+        self.assertEqual(sign_up_page.get_info_box().text,sign_up_page.no_event_message)
+
+        # comm
+        # enter only incorrect starting date
+        date = ['10/08/2016', '']
+        sign_up_page.fill_search_form(date)
+        # verify that no event shows up on event page
+        self.assertEqual(sign_up_page.get_info_box().text,sign_up_page.no_event_message)
+
+        # enter only correct starting date
+        date = ['05/10/2016', '']
+        sign_up_page.fill_search_form(date)
+        # verify that the event shows up
+        self.assertEqual(sign_up_page.get_event_name() 'event')
+
+        # enter only incorrect ending date
+        date = ['', '10/08/2015']
+        sign_up_page.fill_search_form(date)
+        # verify that no event shows up on event page
+        self.assertEqual(sign_up_page.get_info_box().text,sign_up_page.no_event_message)
+
+        # enter correct ending date
+        date = ['', '06/15/2017']
+        sign_up_page.fill_search_form(date)
+        # verify that the event shows up
+        self.assertEqual(sign_up_page.get_event_name(), 'event')"""
